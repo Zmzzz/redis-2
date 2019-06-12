@@ -308,7 +308,7 @@ class Coupon(models.Model):
     """优惠券生成规则"""
     name = models.CharField(max_length=64, verbose_name="活动名称")
     brief = models.TextField(blank=True, null=True, verbose_name="优惠券介绍")
-    coupon_type_choices = ((0, '通用券'), (1, '满减券'), (2, '折扣券'))
+    coupon_type_choices = ((0, '立减券'), (1, '满减券'), (2, '折扣券'))
     coupon_type = models.SmallIntegerField(choices=coupon_type_choices, default=0, verbose_name="券类型")
     """
     通用：

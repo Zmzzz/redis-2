@@ -15,11 +15,11 @@ Including another URLconf
 """
 from django.conf.urls import url
 from django.contrib import admin
-from  api import  views
-from  api import  shopping_car_views
+from  api.views import  shopping_car_views,views,payment_view
 urlpatterns = [
     url(r'^admin/',admin.site.urls),
     url(r'^api/course/$',views.course.as_view({'get':'list'})),
     url(r'^api/course/(?P<pk>\d+)/$', views.course.as_view({'get':'retrieve'})),
     url(r'^api/shopping_car/$',shopping_car_views.shopping_car.as_view()),
+    url(r'api/payment/$',payment_view.payment.as_view())
 ]

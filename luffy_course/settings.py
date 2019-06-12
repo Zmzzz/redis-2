@@ -130,3 +130,4 @@ STATIC_URL = '/static/'
 
 
 KEY='LuffyCourse_%s_%s'
+Payment_Key='Payment_key_%s_%s'

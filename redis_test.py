@@ -3,5 +3,12 @@ import redis
 conn=redis.Redis(connection_pool=pool)
 # conn.flushall()
 # conn.hset('1',1,2)
-print(conn.hgetall('LuffyCourse_1_2'))
+print(conn.keys())
+# import  datetime
+# print(datetime.date.today())
 
+import json
+a={'1':3,'b':{}}
+b={'2':3}
+a['b']=b
+print(a)

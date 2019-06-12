@@ -25,19 +25,16 @@ class shopping_car(APIView):
             price_policy_dict={}
             for item in  price_policy_list:
                 price_policy_dict[item.id]={'period':item.valid_period,'period_display':item.get_valid_period_display(),'price':item.price}
-            print(price_policy_dict)
             # 校验用户提交的价格策略是否合法
             if policy_id not in price_policy_dict:
                 raise PricePolicyValid('价格策略不合法')
             key=settings.KEY %(request.auth.user_id,course_id)
-            print(key)
             car_dict={
                 'title':course_obj.name,
                 'img':course_obj.course_img,
                 'defalut':policy_id,
                 'policy':json.dumps(price_policy_dict)
             }
-            print(car_dict)
             self.conn.hmset(key,car_dict)
             ret.data='添加成功'
         except PricePolicyValid as  e:
