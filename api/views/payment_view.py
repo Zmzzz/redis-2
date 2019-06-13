@@ -4,7 +4,7 @@ import datetime
 from  api import models
 from api.utils.exception import NotFindCourse
 from api.connect_redis.redis_pool import pool
-from luffy_course.settings import KEY,Payment_Key
+from luffy_course.settings import KEY,Payment_Key,Global_Coupon_Key
 from api.utils.Response_msg import Response_msg
 from  rest_framework.views import APIView
 from  rest_framework.response import Response
@@ -22,6 +22,11 @@ class payment(APIView):
         """
         ret=Response_msg()
         try:
+            # 清空redis中的结算
+            payment_key=Payment_Key%(request.auth.user_id,'*')
+            for item in self.conn.scan_iter(payment_key):
+                self.conn.delete(item)
+            self.conn.delete('global_coupon_%s'%request.auth.user_id)
             # 获取用户传来的课程id列表
             course_id_list=request.data.get('course_id')
             data_dict = {}
@@ -29,7 +34,6 @@ class payment(APIView):
                 'coupon':{},
                 'default_coupon':0
             }
-            current_time=datetime.date.today()
             # 获取用户购物车里面的信息
             for course_id in course_id_list:
                 shopping_key=KEY%(request.auth.user_id,course_id)
@@ -44,6 +48,7 @@ class payment(APIView):
                 # 获取到这个课程的部分信息
                 payment_key=Payment_Key%(request.auth.user_id,course_id)
                 data_dict[payment_key] = {
+                    'course_id':course_id,
                     'title': str(self.conn.hget(shopping_key, 'title'), encoding='utf-8'),
                     'img': str(self.conn.hget(shopping_key, 'img'), encoding='utf-8'),
                     'coupon':{},
@@ -51,6 +56,7 @@ class payment(APIView):
                     'default_coupon':0
                 }
                 data_dict[payment_key].update(policy_info)
+            current_time = datetime.date.today()
             # 获取用户所有未使用，没有过期的优惠券
             coupon_obj_list=models.CouponRecord.objects.filter(
                 user=request.auth.user,
@@ -76,6 +82,7 @@ class payment(APIView):
                             'type_name': coupon_obj.coupon.get_coupon_type_display(),
                             'off_percent': coupon_obj.coupon.off_percent
                         }
+
                     continue
                 # 立减券
                 if coupon_obj.coupon.coupon_type == 0:
@@ -92,12 +99,96 @@ class payment(APIView):
                 if course_id in course_id_list:
                     payment_key = Payment_Key % (request.auth.user_id, course_id)
                     data_dict[payment_key]['coupon'][coupon_obj.id]=coupon_course_dict[coupon_obj.id]
-            data_dict['global_coupon']=global_coupon
-            print(data_dict)
+            # 将数据放入到redis中，注意redis中的字典不能再套字典，所以需要dumps进行序列化
+            global_coupon['coupon'] = json.dumps(global_coupon['coupon'])
+            for key,value in data_dict.items():
+                 value['coupon']=json.dumps(value['coupon'])
+                 self.conn.hmset(key,value)
+            self.conn.hmset('global_coupon_%s'%request.auth.user_id,global_coupon)
         except NotFindCourse as e:
             ret.code = 1001
             ret.error = e.msg
-        # except Exception as e:
-        #     ret.code=1001
-        #     ret.error='添加结算错误'
+        except Exception as e:
+            ret.code=1001
+            ret.error='添加结算错误'
+        return Response(ret.dict)
+    def patch(self,request,*args,**kwargs):
+        ret = Response_msg()
+        try:
+            course_id=request.data.get('course_id')
+            coupon_id=str(request.data.get('coupon_id'))
+            print(course_id,coupon_id)
+            # 如果是通用券
+            if not course_id:
+                print('通用券')
+                global_coupon_key=Global_Coupon_Key%(request.auth.user_id)
+                # 改为不使用用通用券
+                if coupon_id =="0":
+                    self.conn.hset(global_coupon_key,'default_coupon','0')
+                    ret.data='修改成功，不使用通用券'
+                    return Response(ret.dict)
+                # 使用通用券
+                # 1.先进行判断是否用这个优惠券
+                global_coupon_dict=json.loads(self.conn.hget(global_coupon_key, 'coupon'))
+                if coupon_id not in global_coupon_dict:
+                    ret.error='没有这个优惠券'
+                    ret.code=1001
+                    return Response(ret.dict)
+                self.conn.hset(global_coupon_key, 'default_coupon', coupon_id)
+                ret.data = '修改成功，使用通用券'
+                return Response(ret.dict)
+            # 非通用券
+            course_id=str(course_id)
+            payment_key=Payment_Key%(request.auth.user_id,course_id)
+            print(payment_key)
+            # 不使用普通优惠券
+            if coupon_id =="0":
+                self.conn.hset(payment_key,'default_coupon',"0")
+                ret.data='不使用普通券'
+                return  Response(ret.dict)
+            # 使用普通优惠券
+            # 1.是否有这个优惠券
+            coupon_dict=json.loads(self.conn.hget(payment_key,'coupon'))
+            print(coupon_dict)
+            if coupon_id not in coupon_dict:
+                ret.error='没有这个普通券'
+                ret.code=1001
+                return  Response(ret.dict)
+            self.conn.hset(payment_key,'default_coupon',coupon_id)
+        except Exception as e:
+            ret.code=1001
+            ret.error='修改结算失败'
+        return Response(ret.dict)
+#
+    def get(self,request,*args,**kwargs):
+        ret=Response_msg()
+        try:
+            payment_key=Payment_Key%(request.auth.user_id,'*')
+            global_coupon_key=Global_Coupon_Key%(request.auth.user_id)
+            payment_list=self.conn.scan_iter(payment_key)
+            course_list=[]
+            for payment in payment_list:
+                info={}
+                data=self.conn.hgetall(payment)
+                for key,value in data.items():
+                    key=str(key,encoding='utf-8')
+                    if key=='coupon':
+                        value=json.loads(value.decode('utf-8'))
+                        info[key] = value
+                    else:
+                        info[key]=value.decode('utf-8')
+                course_list.append(info)
+            # 将通用券放入到数据中
+            global_coupon_dict={
+                'coupon':json.loads(self.conn.hget(global_coupon_key,'coupon').decode('utf-8')),
+                'default_coupon':self.conn.hget(global_coupon_key,'default_coupon').decode('utf-8')
+            }
+            print(course_list,global_coupon_dict)
+            ret.data={
+                'course_list':course_list,
+                'global_coupon_dict':global_coupon_dict
+            }
+        except Exception as e:
+            ret.code=1001
+            ret.data='获取失败'
         return Response(ret.dict)

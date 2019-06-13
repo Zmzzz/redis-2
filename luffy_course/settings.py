@@ -131,3 +131,4 @@ STATIC_URL = '/static/'
 
 KEY='LuffyCourse_%s_%s'
 Payment_Key='Payment_key_%s_%s'
+Global_Coupon_Key='global_coupon_%s'
